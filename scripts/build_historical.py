@@ -55,27 +55,25 @@ def pairs(df,source,year_start,year_end,fa,skr):
     df['year']=df.year.astype(int)
     if df.year.min()!=year_start or df.year.max()!=year_end:
         raise RuntimeError(f'Unexpected years in {source}: {sorted(df.year.unique())}')
+    # SCB municipality-pair tables also include people working in their home municipality.
+    # These are valid observations, but not cross-municipality commuters.
     same=df.home==df.work
-    if same.any():
-        nonzero=df.loc[same & (df['count']!=0),['home','work','year','count']]
-        print(source,'same-municipality rows:',int(same.sum()),
-              'nonzero:',len(nonzero),'examples:',nonzero.head(5).to_dict('records'),flush=True)
-        if not nonzero.empty:
-            raise RuntimeError('Nonzero same-municipality values in cross-border commuter dataset')
-        df=df.loc[~same].copy()
+    print(source,'within-municipality observations:',int(same.sum()),
+          'workers:',int(df.loc[same,'count'].sum()),flush=True)
     if df.empty:
-        raise RuntimeError('No cross-municipality observations after filtering')
+        raise RuntimeError('Historical municipality-pair table is empty')
     if df.duplicated(['home','work','year']).any():raise RuntimeError('Duplicate historical OD-year')
     if not (set(df.home)|set(df.work)).issubset(set(fa)&set(skr)):
         raise RuntimeError('Historical municipality codes not fully covered by classifications')
     df['fa_home']=df.home.map(fa);df['fa_work']=df.work.map(fa);df['skr_home']=df.home.map(skr)
-    df['cross_fa_count']=df['count'].where(df.fa_home!=df.fa_work,0)
+    df['external_count']=df['count'].where(df.home!=df.work,0)
+    df['cross_fa_count']=df['external_count'].where(df.fa_home!=df.fa_work,0)
     result=[]
     def append(group,key,label,part):
         for year,g in part.groupby('year'):
             result.append(dict(group=group,key=str(key),label=str(label),year=int(year),
-               external=int(g['count'].sum()),cross_fa=int(g.cross_fa_count.sum()),
-               workers=None,source=source))
+               external=int(g.external_count.sum()),cross_fa=int(g.cross_fa_count.sum()),
+               workers=int(g['count'].sum()),source=source))
     for grp in ('municipality','skr','fa'):append(grp,'ALL','Hela Sverige',df)
     for key,g in df.groupby('home'):append('municipality',key,key,g)
     for key,g in df.groupby('skr_home'):append('skr',key,key,g)
