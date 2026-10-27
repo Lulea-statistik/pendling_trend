@@ -22,6 +22,8 @@ jobs:
       - run: pip install pandas openpyxl requests
       - name: Fetch SCB commuting and regional classifications
         run: python scripts/build.py
+      - name: Build separate historical RAMS series
+        run: python scripts/build_historical.py
       - name: Commit generated data
         run: |
           git config user.name 'github-actions[bot]'
