@@ -12,6 +12,7 @@ import requests
 
 BASE=Path(__file__).resolve().parent.parent
 OUT=BASE/'docs/data/summary.json'
+LABELS_OUT=BASE/'docs/data/geo_labels.json'
 ROOT='https://www.scb.se/contentassets/c4b8142033a9440ca53725ca32321a74/'
 URLS={
  'commute':'https://www.statistikdatabasen.scb.se/Resources/PX/bulk/ssd/sv/TAB1830_sv.zip',
@@ -77,6 +78,86 @@ def load_lookup(source, kind):
     print(kind,'selected sheet',best[2],'code column',best[3],'group column',best[4],'distinct',len(set(best[5].values())))
     return best[5]
 
+
+# Official 2023 SKR municipality group names. The codes remain data join keys.
+SKR_GROUP_NAMES={
+    'A1':'Storstäder',
+    'A2':'Pendlingskommun nära storstad',
+    'B3':'Större stad',
+    'B4':'Pendlingskommun nära större stad',
+    'B5':'Lågpendlingskommun nära större stad',
+    'C6':'Mindre stad/tätort',
+    'C7':'Pendlingskommun nära mindre stad/tätort',
+    'C8':'Landsbygdskommun',
+    'C9':'Landsbygdskommun med besöksnäring',
+}
+
+def load_geo_names(fa,skr):
+    """Resolve all visible names using SCB's official FA25 municipality workbook.
+
+    Never guess names from codes. Fail the build if the source layout changes.
+    """
+    df=pd.read_excel(io.BytesIO(download(URLS['fa'])),sheet_name='FA25',dtype=str).fillna('')
+    required={'KommunKod','FA25Nr','FA25Namn'}
+    if not required.issubset(df.columns):
+        raise RuntimeError('FA25 labels missing fields: '+str(sorted(required-set(df.columns))))
+    df=df.loc[df['KommunKod'].astype(str).str.strip().ne('')].copy()
+    if len(df)!=290:
+        raise RuntimeError(f'FA25 label source expected 290 municipalities, got {len(df)}')
+
+    def municipality_name(value):
+        name=str(value).strip()
+        name=re.sub(r'^\d{4}\s+', '', name)
+        return name
+
+    # Names may be headed KommunNamn or Kommun in different workbook releases.
+    # Only a text column identifying every municipality uniquely is accepted.
+    candidates=[]
+    for col in df.columns:
+        if col in required:continue
+        vals=df[col].map(municipality_name)
+        if (vals.str.len().ge(2).all() and vals.str.contains('[A-Za-zÅÄÖåäö]',regex=True).all()
+            and vals.nunique()==290):
+            preference=0 if re.search(r'kommun.*namn|namn.*kommun',str(col),re.I) else (1 if re.search('kommun',str(col),re.I) else 2)
+            candidates.append((preference,str(col),vals))
+    if not candidates:
+        raise RuntimeError('No verified municipality-name column in FA25 workbook: '+str(list(df.columns)))
+    candidates.sort(key=lambda x:(x[0],x[1]))
+    if len(candidates)>1 and candidates[0][0]==candidates[1][0]:
+        raise RuntimeError('Ambiguous municipality-name columns in FA25 workbook: '+str([c[1] for c in candidates]))
+    name_column=candidates[0][1]
+    print('FA25 municipality name column:',name_column,flush=True)
+    df['_municipality_name']=candidates[0][2].values
+
+    names={'municipality':{'ALL':'Hela Sverige'},
+           'fa':{'ALL':'Hela Sverige'},
+           'skr':{'ALL':'Hela Sverige'}}
+    for _,r in df.iterrows():
+        code=str(r['KommunKod']).strip().zfill(4)
+        region=str(r['FA25Nr']).strip()
+        municipality=str(r['_municipality_name']).strip()
+        region_name=str(r['FA25Namn']).strip()
+        if not re.fullmatch(r'\d{4}',code) or not municipality or not region_name:
+            raise RuntimeError('Invalid FA25 municipality/region labels: '+str((code,municipality,region,region_name)))
+        if code in names['municipality'] and names['municipality'][code]!=municipality:
+            raise RuntimeError('Conflicting municipality names for '+code)
+        if region in names['fa'] and names['fa'][region]!=region_name:
+            raise RuntimeError('Conflicting FA25 region names for '+region)
+        names['municipality'][code]=municipality
+        names['fa'][region]=region_name
+
+    for code,label in SKR_GROUP_NAMES.items():
+        names['skr'][code]=label
+    if set(names['municipality'])-{'ALL'}!=set(fa):
+        raise RuntimeError('Municipality-name lookup does not cover exactly the FA25 municipalities')
+    if set(names['fa'])-{'ALL'}!=set(fa.values()):
+        raise RuntimeError('FA25 names do not cover exactly the FA25 regions')
+    if set(names['skr'])-{'ALL'}!=set(skr.values()):
+        raise RuntimeError('Unexpected SKR groups: '+str(sorted(set(skr.values()))))
+    if len(set(names['municipality'].values()))!=291:
+        raise RuntimeError('Municipality-name lookup has duplicate visible names')
+    return names
+
 def load_pairs(raw):
     z=zipfile.ZipFile(io.BytesIO(raw))
     members=[n for n in z.namelist() if n.lower().endswith('.csv')]
@@ -125,6 +206,7 @@ def main():
     pairs=load_pairs(download(URLS['commute']))
     fa=load_lookup(URLS['fa'],'fa')
     skr=load_lookup(URLS['skr'],'skr')
+    geo_names=load_geo_names(fa,skr)
     codes=set(pairs.home)|set(pairs.work)
     for key,lookup in [('FA25',fa),('SKR2023',skr)]:
         missing=sorted(codes-set(lookup))
@@ -143,12 +225,13 @@ def main():
     push('municipality','ALL','Hela Sverige',pairs)
     push('skr','ALL','Hela Sverige',pairs)
     push('fa','ALL','Hela Sverige',pairs)
-    for code,g in pairs.groupby('home'):push('municipality',code,code,g)
-    for code,g in pairs.groupby('skr_home'):push('skr',code,code,g)
-    for code,g in pairs.groupby('fa_home'):push('fa',code,code,g)
+    for code,g in pairs.groupby('home'):push('municipality',code,geo_names['municipality'][code],g)
+    for code,g in pairs.groupby('skr_home'):push('skr',code,geo_names['skr'][code],g)
+    for code,g in pairs.groupby('fa_home'):push('fa',code,geo_names['fa'][code],g)
     payload=dict(years=sorted(pairs.year.unique().astype(int).tolist()),source=URLS,
         generated_utc=datetime.now(timezone.utc).isoformat(),records=int(len(pairs)),summary=summary)
     OUT.parent.mkdir(parents=True,exist_ok=True)
     OUT.write_text(json.dumps(payload,ensure_ascii=False,separators=(',',':'))+'\n',encoding='utf-8')
+    LABELS_OUT.write_text(json.dumps({'source':URLS['fa'],'names':geo_names},ensure_ascii=False,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')
     print('Successfully generated',len(summary),'summary rows')
 if __name__=='__main__':main()

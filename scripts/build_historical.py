@@ -37,7 +37,7 @@ def code(s):
     m=re.match(r'^(\d{4})(?:\D|$)',str(s).strip())
     return m.group(1) if m else None
 
-def pairs(df,source,year_start,year_end,fa,skr):
+def pairs(df,source,year_start,year_end,fa,skr,names):
     h=field(df,'bostadskommun')
     w=field(df,'arbetsställekommun')
     y=field(df,'år')
@@ -75,17 +75,18 @@ def pairs(df,source,year_start,year_end,fa,skr):
                external=int(g.external_count.sum()),cross_fa=int(g.cross_fa_count.sum()),
                workers=int(g['count'].sum()),source=source))
     for grp in ('municipality','skr','fa'):append(grp,'ALL','Hela Sverige',df)
-    for key,g in df.groupby('home'):append('municipality',key,key,g)
-    for key,g in df.groupby('skr_home'):append('skr',key,key,g)
-    for key,g in df.groupby('fa_home'):append('fa',key,key,g)
+    for key,g in df.groupby('home'):append('municipality',key,names['municipality'][key],g)
+    for key,g in df.groupby('skr_home'):append('skr',key,names['skr'][key],g)
+    for key,g in df.groupby('fa_home'):append('fa',key,names['fa'][key],g)
     return result
 
 def main():
     from build import load_lookup,URLS
     fa=load_lookup(URLS['fa'],'fa');skr=load_lookup(URLS['skr'],'skr')
+    names=json.loads((BASE/'docs/data/geo_labels.json').read_text(encoding='utf-8'))['names']
     result=[]
     for source,start,end in [('rams_2004_2018',2004,2018),('rams_2019_2021',2019,2021)]:
-        result+=pairs(get_frame(SOURCES[source]),source,start,end,fa,skr)
+        result+=pairs(get_frame(SOURCES[source]),source,start,end,fa,skr,names)
     # Aggregate source is retained and checked for column presence and years;
     # it is not added to municipality-pair totals (would double-count).
     agg=get_frame(SOURCES['rams_aggregate_2004_2018'])
