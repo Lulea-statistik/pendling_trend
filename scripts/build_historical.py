@@ -29,7 +29,8 @@ def get_frame(code):
     return frame
 
 def field(df,needle):
-    v=[c for c in df if c.lower().strip()==needle]\n    if not v: v=[c for c in df if needle in c.lower()]
+    v=[c for c in df if c.lower().strip()==needle]
+    if not v: v=[c for c in df if needle in c.lower()]
     if len(v)!=1:raise ValueError(f'Expected column matching {needle}, found {v}')
     return v[0]
 def code(s):
