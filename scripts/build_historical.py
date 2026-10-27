@@ -44,7 +44,7 @@ def pairs(df,source,year_start,year_end,fa,skr):
     v=next((c for c in df if 'pendlare' in c.lower() and c not in (h,w)),None)
     if not v:raise ValueError(f'No pendlare measure in {source}: {df.columns.tolist()}')
     sex=field(df,'kön')
-    sel=df[sex].str.lower().str.strip()=='totalt'
+    sel=df[sex].astype(str).str.lower().str.strip().isin(['totalt','män och kvinnor'])
     if not sel.any():raise ValueError(f'No total sex in {source}: {df[sex].unique()}')
     df=df.loc[sel,[h,w,y,v]].copy()
     df['home']=df[h].map(code);df['work']=df[w].map(code)
