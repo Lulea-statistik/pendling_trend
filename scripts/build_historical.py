@@ -89,8 +89,26 @@ def main():
     # Aggregate source is retained and checked for column presence and years;
     # it is not added to municipality-pair totals (would double-count).
     agg=get_frame(SOURCES['rams_aggregate_2004_2018'])
-    if not any('inpendlare' in c.lower() for c in agg):
-        raise RuntimeError('Expected aggregate inpendlare field missing')
+    required={'region','kön','år','tabellinnehåll'}
+    if not required.issubset(agg.columns):
+        raise RuntimeError('Missing aggregate dimensions: '+str(sorted(required-set(agg.columns))))
+    categories=agg['tabellinnehåll'].dropna().astype(str).str.strip()
+    print('TAB3266 tabellinnehåll categories:',sorted(categories.unique().tolist()),flush=True)
+    if categories.empty or not categories.str.contains('pendl|arbet|kommun',case=False,regex=True).any():
+        raise RuntimeError('TAB3266 aggregate categories are empty or unexpected')
+    valcols=[c for c in agg.columns if c not in required]
+    if len(valcols)!=1:
+        raise RuntimeError('TAB3266 expected one measure column, got '+str(valcols))
+    years=pd.to_numeric(agg['år'],errors='coerce')
+    if years.isna().any() or years.min()>2004 or years.max()<2018:
+        raise RuntimeError('TAB3266 aggregate year coverage differs from expected 2004-2018')
+    totalmask=agg['kön'].astype(str).str.strip().str.lower().isin(['män och kvinnor','totalt'])
+    if not totalmask.any():
+        raise RuntimeError('TAB3266 missing combined sex category')
+    values=pd.to_numeric(agg.loc[totalmask,valcols[0]],errors='coerce')
+    print('TAB3266 total-sex rows:',int(totalmask.sum()),'numeric:',int(values.notna().sum()),flush=True)
+    if values.notna().sum()==0:
+        raise RuntimeError('TAB3266 lacks numeric aggregated observations')
     output=BASE/'docs/data/historical.json'
     output.parent.mkdir(parents=True,exist_ok=True)
     output.write_text(json.dumps({'rows':result,'years':list(range(2004,2022)),
