@@ -31,6 +31,25 @@ def extract_code(x):
 def load_lookup(source, kind):
     raw=download(source)
     book=pd.ExcelFile(io.BytesIO(raw))
+    if kind=='fa':
+        df=pd.read_excel(book,sheet_name='FA25',dtype=str)
+        needed={'KommunKod','FA25Nr','FA25Namn'}
+        if not needed.issubset(df.columns):
+            raise RuntimeError('FA25 missing expected fields: '+str(sorted(needed-set(df.columns))))
+        df=df.dropna(subset=['KommunKod','FA25Nr'])
+        mapping={}
+        for _,row in df.iterrows():
+            code=str(row['KommunKod']).strip().zfill(4)
+            if not re.fullmatch(r'\\d{4}',code):
+                raise RuntimeError('Unexpected FA25 municipality code: '+code)
+            group=str(row['FA25Nr']).strip()
+            if code in mapping and mapping[code]!=group:
+                raise RuntimeError('Conflicting FA region for '+code)
+            mapping[code]=group
+        if len(mapping)!=290:
+            raise RuntimeError(f'FA25 has {len(mapping)} municipality mappings, expected 290')
+        print('FA25 verified municipalities:',len(mapping),'regions:',len(set(mapping.values())))
+        return mapping
     print(kind,'sheets:',book.sheet_names)
     candidates=[]
     for name in book.sheet_names:
