@@ -5,7 +5,7 @@
 <section class="panel"><div class="stats"><div class="stat"><small>Senaste år</small><strong id="year">–</strong></div><div class="stat"><small>Andel annan kommun</small><strong id="share">–</strong></div><div class="stat"><small>Andel annan FA-region</small><strong id="fashare">–</strong></div></div></section>
 <section class="panel"><h2>Utveckling över tid</h2><div class="chart"><canvas id="trend"></canvas></div></section>
 <section class="panel"><h2>Årsdata (BAS 2020–2024)</h2><div class="overflow"><table><thead><tr><th>År</th><th>Sysselsatta</th><th>Arbetar i annan kommun</th><th>Andel</th><th>Arbetar i annan FA-region</th><th>Andel</th></tr></thead><tbody id="table"></tbody></table></div></section>
-<section class="panel hint"><h2>Metod och datakvalitet</h2><p><b>Syfte:</b> Undersöka om andelen sysselsatta som har arbetsställe i annan kommun än bostadskommunen ökar över tid och hur stor del som passerar FA-regiongräns.</p><p><b>Avgränsning:</b> Det är bostads- och arbetsställegeografi, inte uppmätta resor. Distansarbete, tjänsteresor och faktiskt antal pendlingsdagar kan inte utläsas. Regionindelningarna SKR 2023 och FA25 hålls fasta för hela tidsserien för jämförbarhet. FA25 är framtagen med prognosbaserade pendlingsmönster och är inte en historisk årsindelning.</p><p><b>SCB:</b> Registerbaserad arbetsmarknadsstatistik (BAS), tabell ArRegPend2. Uppgifter är sekretessbehandlade och delsummeringar kan avvika från totaler. Metodändring för klassificering av företagare 2024 innebär jämförbarhetsbrott. Andelen beräknas av observerade kommunpar; kända avvikelser och bortfall redovisas i källdata.</p><p>Källor: <a href="https://www.statistikdatabasen.scb.se/pxweb/sv/ssd/START__AM__AM0210__AM0210F/ArRegPend2/">SCB</a> · <a href="https://www.scb.se/hitta-statistik/regional-statistik-och-kartor/regionala-indelningar/funktionella-regioner-och-kommungrupper/">SCB regionindelningar</a> · <a href="https://tillvaxtverket.se/tillvaxtverket/publikationer/publikationer2025/funktionellaanalysregioner2025.9233.html">Tillväxtverket FA25</a></p></section>
+<section class="panel hint"><h2>Metod och datakvalitet</h2><p><b>Syfte:</b> Undersöka om andelen sysselsatta som har arbetsställe i annan kommun än bostadskommunen ökar över tid och hur stor del som passerar FA-regiongräns.</p><p><b>Avgränsning:</b> Det är bostads- och arbetsställegeografi, inte uppmätta resor. Distansarbete, tjänsteresor och faktiskt antal pendlingsdagar kan inte utläsas. Regionindelningarna SKR 2023 och FA25 hålls fasta för hela tidsserien för jämförbarhet. FA25 är framtagen med prognosbaserade pendlingsmönster och är inte en historisk årsindelning.</p><p><b>Diagrammens andelsmått:</b> Y-axelns övre gräns bestäms av den högsta observerade andelen inom vald gruppering (kommun, FA-region eller SKR-grupp) under samtliga år i RAMS och BAS och avrundas uppåt till närmaste fem procentenheter. Skalan ändras inte vid byte av geografiskt urval, men kan ändras vid byte av gruppering eller mått.</p><p><b>SCB:</b> Registerbaserad arbetsmarknadsstatistik (BAS), tabell ArRegPend2. Uppgifter är sekretessbehandlade och delsummeringar kan avvika från totaler. Metodändring för klassificering av företagare 2024 innebär jämförbarhetsbrott. Andelen beräknas av observerade kommunpar; kända avvikelser och bortfall redovisas i källdata.</p><p>Källor: <a href="https://www.statistikdatabasen.scb.se/pxweb/sv/ssd/START__AM__AM0210__AM0210F/ArRegPend2/">SCB</a> · <a href="https://www.scb.se/hitta-statistik/regional-statistik-och-kartor/regionala-indelningar/funktionella-regioner-och-kommungrupper/">SCB regionindelningar</a> · <a href="https://tillvaxtverket.se/tillvaxtverket/publikationer/publikationer2025/funktionellaanalysregioner2025.9233.html">Tillväxtverket FA25</a></p></section>
 <section class="panel"><h2>Historiska pendlingsströmmar – RAMS och BAS 2004–2024</h2>
 <p class="hint">Båda diagrammen visar tre separata tidsserier med samma färger: RAMS 2004–2018 (grå), RAMS 2019–2021 (guld) och BAS 2020–2024 (röd). Överlappande år 2020–2021 visas som skilda observationer. Metodbrott 2011, 2019 och vid övergången till BAS gör att nivåer och andelar inte är direkt jämförbara; linjerna kopplas därför inte ihop mellan serierna.</p>
 <div class="controls"><label>Historiskt mått<select id="hmetric"><option value="external">Annan kommun</option><option value="cross_fa">Annan FA-region</option></select></label></div>
@@ -21,6 +21,24 @@ const SERIES = [
  {id:'bas_2020_2024',label:'BAS 2020–2024',color:'#dc2626'}
 ];
 let data, historical, chart, historyChart;
+const shareAxisLimits = {};
+// One upper limit per geography grouping and share metric, independent of the selected area.
+// Include both RAMS series and BAS; never allow the national total (ALL) to determine a regional maximum.
+function calculateShareAxisLimits() {
+ for (const group of ['municipality','skr','fa']) {
+  shareAxisLimits[group] = {};
+  for (const metric of ['external_share','cross_fa_share']) {
+   let peak=0;
+   for (const row of [...historical.rows,...data.summary]) {
+    if (row.group!==group || row.key==='ALL') continue;
+    const value=observationValue(row,metric);
+    if (value!==null && Number.isFinite(value)) peak=Math.max(peak,value);
+   }
+   // 5-percentage-point steps keep the upper axis bound readable and cover every series.
+   shareAxisLimits[group][metric]=Math.max(5,Math.ceil(peak/5)*5);
+  }
+ }
+}
 function observationValue(row, metric) {
  if (!row) return null;
  if (metric.endsWith('_share')) {
@@ -63,7 +81,11 @@ function drawLine(canvasId,previousChart,metric) {
    },
    scales:{
     x:{title:{display:true,text:'År'}},
-    y:{beginAtZero:!percent,title:{display:true,text:percent?'Procent':'Antal'},ticks:{callback:v=>percent?v+' %':fmt.format(v)}}
+    y:{beginAtZero:true,
+       min:percent?0:undefined,
+       max:percent?shareAxisLimits[group][metric]:undefined,
+       title:{display:true,text:percent?'Procent':'Antal'},
+       ticks:{callback:v=>percent?v+' %':fmt.format(v)}}
    }
   }
  });
@@ -77,7 +99,7 @@ function render() {
  $('fashare').textContent=latest?pct(latest.cross_fa/latest.workers):'–';
  $('table').innerHTML=rows.map(r=>'<tr><td>'+r.year+'</td><td>'+fmt.format(r.workers)+'</td><td>'+fmt.format(r.external)+'</td><td>'+pct(r.external/r.workers)+'</td><td>'+fmt.format(r.cross_fa)+'</td><td>'+pct(r.cross_fa/r.workers)+'</td></tr>').join('');
  chart=drawLine('trend',chart,metric);
- $('status').textContent=rows.length?'Tre separata serier visas för '+$('geo').selectedOptions[0].text+'. Årsdata nedan avser BAS 2020–2024.':'Inga data för valt urval.';
+ $('status').textContent=rows.length?'Tre separata serier visas för '+$('geo').selectedOptions[0].text+'. '+(metric.endsWith('_share')?'Fast y-axel 0–'+shareAxisLimits[group][metric]+' % för hela grupperingen. ':'')+'Årsdata nedan avser BAS 2020–2024.':'Inga data för valt urval.';
 }
 function renderHistory() {
  const group=$('group').value,geo=$('geo').value,metric=$('hmetric').value;
@@ -103,6 +125,7 @@ async function start() {
   if(!b.ok || !h.ok) throw Error('En eller flera datafiler saknas. Kontrollera byggkörningen.');
   [data,historical]=await Promise.all([b.json(),h.json()]);
   if(!data.summary?.length || !historical.rows?.length)throw Error('Någon av datafilerna saknar observationer.');
+  calculateShareAxisLimits();
   $('group').onchange=resetGeography;
   $('geo').onchange=renderBoth;
   $('metric').onchange=render;
