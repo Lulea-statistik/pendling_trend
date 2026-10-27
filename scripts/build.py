@@ -40,7 +40,7 @@ def load_lookup(source, kind):
         mapping={}
         for _,row in df.iterrows():
             code=str(row['KommunKod']).strip().zfill(4)
-            if not re.fullmatch(r'\\d{4}',code):
+            if not re.fullmatch(r'\d{4}',code):
                 raise RuntimeError('Unexpected FA25 municipality code: '+code)
             group=str(row['FA25Nr']).strip()
             if code in mapping and mapping[code]!=group:
