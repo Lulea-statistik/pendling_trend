@@ -76,6 +76,16 @@ def load_lookup(source, kind):
     candidates.sort(key=lambda x:(-x[0],x[1]))
     best=candidates[0]
     print(kind,'selected sheet',best[2],'code column',best[3],'group column',best[4],'distinct',len(set(best[5].values())))
+    if kind=='skr':
+        # The source includes a header/extra code mapped to the literal
+        # heading 'Gruppkod'. Never allow it as a tenth SKR group.
+        unexpected={c:v for c,v in best[5].items() if v not in SKR_GROUP_NAMES}
+        if unexpected:
+            print('Ignored non-SKR classification rows:',unexpected,flush=True)
+        valid={c:v for c,v in best[5].items() if v in SKR_GROUP_NAMES}
+        if len(valid)!=290 or set(valid.values())!=set(SKR_GROUP_NAMES):
+            raise RuntimeError('Invalid SKR 2023 mapping: '+str((len(valid), sorted(set(valid.values())))))
+        return valid
     return best[5]
 
 
