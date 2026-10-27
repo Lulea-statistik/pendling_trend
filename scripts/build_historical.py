@@ -33,7 +33,7 @@ def field(df,needle):
     if len(v)!=1:raise ValueError(f'Expected column matching {needle}, found {v}')
     return v[0]
 def code(s):
-    m=re.match(r'^(\\d{4})(?:\\D|$)',str(s).strip())
+    m=re.match(r'^(\d{4})(?:\D|$)',str(s).strip())
     return m.group(1) if m else None
 
 def pairs(df,source,year_start,year_end,fa,skr):
