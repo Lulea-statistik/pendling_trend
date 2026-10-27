@@ -65,10 +65,10 @@ def load_pairs(raw):
     print('CSV members',members[:12])
     member=max(members,key=lambda n:z.getinfo(n).file_size)
     sample=z.read(member)[:3000]
-    print('CSV preview',sample[:800].decode('utf-8-sig',errors='replace'))
+    print('CSV preview',sample[:800].decode('cp1252',errors='replace'))
     for sep in (';',',','\t'):
         try:
-            df=pd.read_csv(z.open(member),sep=sep,dtype=str,encoding='utf-8-sig',low_memory=False)
+            df=pd.read_csv(z.open(member),sep=sep,dtype=str,encoding='cp1252',low_memory=False)
             if df.shape[1]>=4:break
         except Exception:pass
     else:raise RuntimeError('Could not parse SCB CSV')
