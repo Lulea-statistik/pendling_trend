@@ -6,10 +6,40 @@
 <section class="panel"><h2>Utveckling över tid</h2><div class="chart"><canvas id="trend"></canvas></div></section>
 <section class="panel"><h2>Årsdata</h2><div class="overflow"><table><thead><tr><th>År</th><th>Sysselsatta</th><th>Arbetar i annan kommun</th><th>Andel</th><th>Arbetar i annan FA-region</th><th>Andel</th></tr></thead><tbody id="table"></tbody></table></div></section>
 <section class="panel hint"><h2>Metod och datakvalitet</h2><p><b>Syfte:</b> Undersöka om andelen sysselsatta som har arbetsställe i annan kommun än bostadskommunen ökar över tid och hur stor del som passerar FA-regiongräns.</p><p><b>Avgränsning:</b> Det är bostads- och arbetsställegeografi, inte uppmätta resor. Distansarbete, tjänsteresor och faktiskt antal pendlingsdagar kan inte utläsas. Regionindelningarna SKR 2023 och FA25 hålls fasta för hela tidsserien för jämförbarhet. FA25 är framtagen med prognosbaserade pendlingsmönster och är inte en historisk årsindelning.</p><p><b>SCB:</b> Registerbaserad arbetsmarknadsstatistik (BAS), tabell ArRegPend2. Uppgifter är sekretessbehandlade och delsummeringar kan avvika från totaler. Metodändring för klassificering av företagare 2024 innebär jämförbarhetsbrott. Andelen beräknas av observerade kommunpar; kända avvikelser och bortfall redovisas i källdata.</p><p>Källor: <a href="https://www.statistikdatabasen.scb.se/pxweb/sv/ssd/START__AM__AM0210__AM0210F/ArRegPend2/">SCB</a> · <a href="https://www.scb.se/hitta-statistik/regional-statistik-och-kartor/regionala-indelningar/funktionella-regioner-och-kommungrupper/">SCB regionindelningar</a> · <a href="https://tillvaxtverket.se/tillvaxtverket/publikationer/publikationer2025/funktionellaanalysregioner2025.9233.html">Tillväxtverket FA25</a></p></section>
-</main><script>
+<section class="panel"><h2>Historiska pendlingsströmmar (RAMS) 2004–2021</h2>
+<p class="hint">Antal som arbetar i en annan kommun eller FA-region. Separata serier för 2004–2018 och 2019–2021, eftersom statistiken har metodbrott 2011 och 2019. BAS 2020–2024 visas ovan och sammanfogas inte numeriskt med RAMS.</p>
+<div class="controls"><label>Historiskt mått<select id="hmetric"><option value="external">Annan kommun</option><option value="cross_fa">Annan FA-region</option></select></label></div>
+<p id="hstatus" class="hint">Laddar historiska serier…</p><div class="chart"><canvas id="historyChart"></canvas></div>
+</section></main><script>
 const fmt=new Intl.NumberFormat('sv-SE');const pct=n=>Number.isFinite(n)?new Intl.NumberFormat('sv-SE',{style:'percent',maximumFractionDigits:1}).format(n):'–';let data,chart;
 const $=id=>document.getElementById(id);
 function render(){const geo=$('geo').value,group=$('group').value,metric=$('metric').value;const rows=data.summary.filter(r=>r.group===group&&(geo==='ALL'?r.key==='ALL':r.key===geo)).sort((a,b)=>a.year-b.year);const latest=rows.at(-1);$('year').textContent=latest?.year??'–';$('share').textContent=latest?pct(latest.external/latest.workers):'–';$('fashare').textContent=latest?pct(latest.cross_fa/latest.workers):'–';$('table').innerHTML=rows.map(r=>'<tr><td>'+r.year+'</td><td>'+fmt.format(r.workers)+'</td><td>'+fmt.format(r.external)+'</td><td>'+pct(r.external/r.workers)+'</td><td>'+fmt.format(r.cross_fa)+'</td><td>'+pct(r.cross_fa/r.workers)+'</td></tr>').join('');const percent=metric.endsWith('_share');const ds=rows.map(r=>percent?(r.workers?r[metric.replace('_share','')]/r.workers*100:null):r[metric]);if(chart)chart.destroy();chart=new Chart($('trend'),{type:'line',data:{labels:rows.map(r=>r.year),datasets:[{label:$('metric').selectedOptions[0].text,data:ds,borderColor:'#dc2626',backgroundColor:'#dc2626',tension:.16,pointRadius:5,spanGaps:false}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:!percent,title:{display:true,text:percent?'Procent':'Antal'},ticks:{callback:v=>percent?v+' %':fmt.format(v)}}}}});$('status').textContent=rows.length?('Visar '+rows.length+' årsobservationer. FA25 och SKR 2023 används som fasta indelningar.'):'Inga data för valt urval.'}
 async function start(){try{const r=await fetch('data/summary.json',{cache:'no-store'});if(!r.ok)throw Error('Genererade data saknas. GitHub Actions måste köras.');data=await r.json();const group=$('group'),geo=$('geo');function reset(){const opts=data.summary.filter(r=>r.group===group.value&&r.key!=='ALL'&&r.year===data.years.at(-1));const keys=[...new Map(opts.map(r=>[r.key,r.label])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'sv'));geo.innerHTML='<option value="ALL">Hela Sverige</option>'+keys.map(([k,v])=>'<option value="'+k+'">'+v+'</option>').join('');render()}group.onchange=reset;geo.onchange=render;$('metric').onchange=render;reset()}catch(e){$('status').textContent='Kunde inte läsa statistik: '+e.message}}
 start();
+let historyChart=null;const historicColors={'rams_2004_2018':'#64748b','rams_2019_2021':'#d97706'};
+async function loadHistory(){try{
+ const r=await fetch('data/historical.json',{cache:'no-store'});if(!r.ok)throw new Error('Historisk datafil har ännu inte genererats');
+ const h=await r.json();
+ function draw(){
+  const geo=$('geo').value,group=$('group').value,metric=$('hmetric').value;
+  const rows=h.rows.filter(x=>x.group===group&&x.key===geo);
+  const datasets=['rams_2004_2018','rams_2019_2021'].map(source=>{
+    const selected=rows.filter(x=>x.source===source);
+    const lookup=new Map(selected.map(x=>[x.year,x[metric]]));
+    return {label:source==='rams_2004_2018'?'RAMS 2004–2018':'RAMS 2019–2021',
+      data:h.years.map(y=>lookup.get(y)??null),borderColor:historicColors[source],
+      backgroundColor:historicColors[source],spanGaps:false,pointRadius:2,tension:0};
+  });
+  if(historyChart)historyChart.destroy();
+  historyChart=new Chart($('historyChart'),{type:'line',data:{labels:h.years,datasets},
+   options:{maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},
+   scales:{y:{beginAtZero:true,title:{display:true,text:'Antal pendlare'}}}}});
+  $('hstatus').textContent=rows.length?'Historiska år: 2004–2021. Källa RAMS; jämför inte nivåer rakt av med BAS.':'Inga historiska data i valt urval.';
+ }
+ $('hmetric').addEventListener('change',draw);
+ $('geo').addEventListener('change',draw);
+ $('group').addEventListener('change',()=>setTimeout(draw,0));
+ draw();
+}catch(e){$('hstatus').textContent=e.message}}
+loadHistory();
 </script></body></html>
