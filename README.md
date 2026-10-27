@@ -24,3 +24,4 @@ Kör **Build commuting trend data** under Actions. Det hämtar SCB och referensl
 
 ## Metodgränser
 Måttet avser inte resor eller faktiska pendlingsdagar. Arbetsställeplacering skiljer sig från var arbetet faktiskt utförs vid distansarbete. SCB:s sekretessmetod kan orsaka avvikelser mellan totalsummor och delsummor. Från 2024 har SCB justerat klassificeringen av företagare, varför tidsserien bör tolkas försiktigt.
+\n## Historiska tabeller (separata RAMS-serier)\n- TAB333: kommunpar, 2004–2018.\n- TAB5850: kommunpar, 2019–2021.\n- TAB3266: kommunvis in-/utpendling samt bor och arbetar, 2004–2018. Läggs inte ovanpå kommunpar, för att undvika dubbelräkning.\n\nMetodbrott 2011 (åldersklassning), 2019 (AGI i stället för kontrolluppgifter) och 2020 vid övergång till BAS bör markeras. Historiska RAMS-antal omfattar endast pendling över kommungräns och kan inte användas för att beräkna andel av alla förvärvsarbetande utan en kontrollerad totalpopulation.\n
